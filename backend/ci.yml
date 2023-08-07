@@ -1,0 +1,98 @@
+version: '3.9'
+
+volumes:
+  postgres_data: {}
+
+services:
+  django: &django
+    build:
+      context: .
+      dockerfile: ./compose/local/django/Dockerfile
+    image: local_django
+    container_name: local_django
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+      - mailhog
+    volumes:
+      - ./backend:/app:z
+    env_file:
+      - ./.envs/.local/.django
+      - ./.envs/.local/.postgres
+    ports:
+      - '8000:8000'
+    command: /start
+
+  postgres:
+    build:
+      context: .
+      dockerfile: ./compose/production/postgres/Dockerfile
+    image: postgres
+    container_name: postgres
+    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./pg-backups:/backups:z
+    env_file:
+      - ./.envs/.local/.postgres
+    ports:
+      - '5432:5432'
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.0
+    container_name: mailhog
+    restart: unless-stopped
+    ports:
+      - '8025:8025'
+
+  redis:
+    image: redis:6
+    container_name: redis
+
+  celeryworker:
+    <<: *django
+    image: celeryworker
+    container_name: celeryworker
+    depends_on:
+      - redis
+      - postgres
+      - mailhog
+    ports: []
+    command: /start-celeryworker
+
+  celerybeat:
+    <<: *django
+    image: celerybeat
+    container_name: celerybeat
+    depends_on:
+      - redis
+      - postgres
+      - mailhog
+    ports: []
+    command: /start-celerybeat
+
+  flower:
+    <<: *django
+    image: flower
+    container_name: flower
+    ports:
+      - '5555:5555'
+    command: /start-flower
+    restart: unless-stopped
+
+  docs:
+    image: docs
+    container_name: docs
+    build:
+      context: .
+      dockerfile: ./compose/local/docs/Dockerfile
+    env_file:
+      - ./.envs/.local/.django
+    volumes:
+      - ./backend/docs:/docs:z
+      - ./backend/config:/app/config:z
+      - ./backend/backend:/app/backend:z
+    ports:
+      - '9000:9000'
+    command: /start-docs
