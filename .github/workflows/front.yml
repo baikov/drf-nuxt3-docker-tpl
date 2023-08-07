@@ -30,16 +30,16 @@ jobs:
           cache: yarn
 
       - name: Install dependencies
-        working-directory: frontend
         run: yarn install --frozen-lockfile
+        working-directory: ./frontend
 
       - name: Set up project
-        working-directory: frontend
         run: yarn postinstall
+        working-directory: ./frontend
 
       - name: Build
-        working-directory: frontend
         run: yarn build
+        working-directory: ./frontend
 
       # - name: Test project
       #   working-directory: frontend

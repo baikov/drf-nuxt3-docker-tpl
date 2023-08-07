@@ -46,6 +46,11 @@ updates:
     # Every weekday
     schedule:
       interval: 'daily'
+    # Ignore major version updates (18 -> 20)
+    ignore:
+      - dependency-name: '*'
+        update-types:
+          - 'version-update:semver-major'
 
   - package-ecosystem: 'docker'
     # Look for a `Dockerfile` in the `compose/production/aws` directory
@@ -87,6 +92,11 @@ updates:
     # Every weekday
     schedule:
       interval: 'daily'
+    # Ignore major version updates (18 -> 20)
+    ignore:
+      - dependency-name: '*'
+        update-types:
+          - 'version-update:semver-major'
 
   # Enable version updates for Python/Pip - Production
   - package-ecosystem: 'pip'
