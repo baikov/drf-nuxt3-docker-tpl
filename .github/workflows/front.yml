@@ -1,0 +1,54 @@
+name: CI
+
+# Enable Buildkit and let compose use it to speed up image building
+env:
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
+
+on:
+  pull_request:
+    branches: ['master', 'main', 'front/*']
+
+  push:
+    branches: ['master', 'main', 'front/*']
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - run: corepack enable
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          cache: yarn
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: yarn install --frozen-lockfile
+
+      - name: Set up project
+        working-directory: frontend
+        run: yarn postinstall
+
+      - name: Build
+        working-directory: frontend
+        run: yarn build
+
+      # - name: Test project
+      #   working-directory: frontend
+      #   run: yarn test
+
+      # - name: Lint
+      #   working-directory: frontend
+      #   run: yarn lint
+
+      # - name: Type check
+      #   working-directory: frontend
+      #   run: yarn test:typecheck

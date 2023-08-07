@@ -1,0 +1,103 @@
+version: '3.9'
+
+services:
+  traefik:
+    build:
+      context: ./compose/local/traefik
+    container_name: ${COMPOSE_PROJECT_NAME}_traefik
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - '0.0.0.0:80:80'  # Nuxt and Django on /api
+      - '0.0.0.0:8080:8080'  # for Traefik dashboard
+      - '0.0.0.0:5555:5555'  # Flower
+      - '0.0.0.0:8025:8025'  # MailHog
+      - '0.0.0.0:24678:24678'  # Nuxt HMR
+      - '0.0.0.0:9000:9000'  # Backend docs
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./logs/traefik:/var/log/traefik
+      - ./compose/local/traefik/traefik.yml:/etc/traefik/traefik.yml
+      - ./compose/local/traefik/dynamic:/etc/traefik/dynamic
+      - /etc/localtime:/etc/localtime:ro
+    env_file:
+      - .env
+
+  nuxt:
+    depends_on:
+      - traefik
+    ports: !reset []
+    expose:
+      - 3000
+      - 24678
+    labels:
+      - "traefik.enable=true"
+      # Nuxt
+      - "traefik.http.routers.nuxt.rule=(Host(`${DOMAIN}`) || Host(`www.${DOMAIN}`))"
+      - "traefik.http.routers.nuxt.service=nuxt@docker"
+      - "traefik.http.routers.nuxt.entrypoints=web"
+      - "traefik.http.routers.nuxt.tls=false"
+      - "traefik.http.routers.nuxt.priority=5"
+      - "traefik.http.routers.nuxt.middlewares=compression@file"
+      - "traefik.http.services.nuxt.loadbalancer.server.port=3000"
+      # HMR
+      - "traefik.http.routers.hmr.rule=(Host(`${DOMAIN}`) || Host(`www.${DOMAIN}`))"
+      - "traefik.http.routers.hmr.service=hmr@docker"
+      - "traefik.http.routers.hmr.entrypoints=hmr"
+      - "traefik.http.routers.hmr.tls=false"
+      - "traefik.http.services.hmr.loadbalancer.server.port=24678"
+
+  django: &django
+    depends_on:
+      - traefik
+    ports: !reset []
+    expose:
+      - 8000
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.django.rule=(Host(`${DOMAIN}`) || Host(`www.${DOMAIN}`)) && (PathPrefix(`/api`) || PathPrefix(`/${DJANGO_ADMIN_URL}`) || PathPrefix(`/static`) || PathPrefix(`/silk`))"
+      - "traefik.http.routers.django.priority=80"
+      - "traefik.http.routers.django.entrypoints=web"
+      - "traefik.http.routers.django.tls=false"
+      - "traefik.http.routers.django.middlewares=compression@file"
+      - "traefik.http.services.django.loadbalancer.server.port=8000"
+
+  mailhog:
+    depends_on:
+      - traefik
+    ports: !reset []
+    expose:
+      - 8025
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.mailhog.rule=(Host(`${DOMAIN}`) || Host(`www.${DOMAIN}`))"
+      - "traefik.http.routers.mailhog.entrypoints=mailhog"
+      - "traefik.http.routers.mailhog.tls=false"
+      - "traefik.http.routers.mailhog.middlewares=compression@file"
+      - "traefik.http.services.mailhog.loadbalancer.server.port=8025"
+
+  flower:
+    <<: *django
+    ports: !reset []
+    expose:
+      - 5555
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.flower.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.flower.entrypoints=flower"
+      - "traefik.http.routers.flower.tls=false"
+      - "traefik.http.routers.flower.middlewares=compression@file"
+      - "traefik.http.services.flower.loadbalancer.server.port=5555"
+
+  # docs:
+  #   ports: !reset []
+  #   expose:
+  #     - 9000
+  #   labels:
+  #     - "traefik.enable=true"
+  #     - "traefik.http.routers.flower.rule=Host(`${DOMAIN}`)"
+  #     - "traefik.http.routers.flower.entrypoints=docs"
+  #     - "traefik.http.routers.flower.tls=false"
+  #     - "traefik.http.routers.flower.middlewares=compression@file"
+  #     - "traefik.http.services.flower.loadbalancer.server.port=9000"

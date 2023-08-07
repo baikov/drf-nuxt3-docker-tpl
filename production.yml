@@ -1,0 +1,164 @@
+version: '3.9'
+name: ${COMPOSE_PROJECT_NAME}
+
+# The `name` will be added at the beginning ov volumes names
+volumes:
+  postgres_data: {}
+  postgres_data_backups: {}
+  django_media: {}
+  traefik_data: {}
+
+services:
+  traefik:
+    build:
+      context: ./compose/production/traefik
+    container_name: ${COMPOSE_PROJECT_NAME}_traefik
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command:
+        - --certificatesresolvers.letsencrypt.acme.email=${EMAIL}
+        # - --pilot.token=${PILOT_TOKEN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "5555:5555"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - traefik_data:/etc/traefik/acme:z
+      - ./logs/traefik:/var/log/traefik
+      - ./compose/production/traefik/traefik.yml:/etc/traefik/traefik.yml
+      - ./compose/production/traefik/dynamic:/etc/traefik/dynamic
+      - /etc/localtime:/etc/localtime:ro
+    env_file: .env
+    labels:
+      - "traefik.enable=true"
+      # Secure Dashboard (http basic auth)
+      - "traefik.http.routers.dashboard.rule=Host(`${TRAEFIK_DASHBOARD}.${DOMAIN}`) && (PathPrefix(`/api`) || PathPrefix(`/dashboard`))"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      # Dashboard auth
+      - "traefik.http.routers.dashboard.middlewares=security-headers@file,dashboard-auth@file"
+
+  nuxt:
+    build:
+      context: .
+      dockerfile: ./compose/production/nuxt-ssr/Dockerfile
+    image: ${COMPOSE_PROJECT_NAME}_nuxt
+    container_name: ${COMPOSE_PROJECT_NAME}_nuxt
+    restart: unless-stopped
+    env_file:
+      - .env
+      - ./.envs/.production/.nuxt
+    command: sh -c "node .output/server/index.mjs"
+    expose:
+      - 3000
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nuxt.rule=(Host(`${DOMAIN}`) || Host(`www.${DOMAIN}`))"
+      - "traefik.http.routers.nuxt.entrypoints=websecure"
+      - "traefik.http.routers.nuxt.priority=5"
+      - "traefik.http.routers.nuxt.tls=true"
+      - "traefik.http.routers.nuxt.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.nuxt.middlewares=security-headers@file,compression@file"
+      - "traefik.http.routers.nuxt.tls.options=default"
+      - "traefik.http.services.nuxt.loadbalancer.server.port=3000"
+
+  django: &django
+    build:
+      context: .
+      dockerfile: ./compose/production/django/Dockerfile
+    image: ${COMPOSE_PROJECT_NAME}_production_django
+    restart: unless-stopped
+    volumes:
+      - django_media:/app/backend/media
+    depends_on:
+      - traefik
+      - postgres
+      - redis
+    env_file:
+      - .env
+      - ./.envs/.production/.django
+      - ./.envs/.production/.postgres
+    command: /start
+    expose:
+      - 5000
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.django.priority=80"
+      - "traefik.http.routers.django.rule=(Host(`${DOMAIN}`) || Host(`www.${DOMAIN}`)) && (PathPrefix(`/api`) || PathPrefix(`/${DJANGO_ADMIN_URL}`) || PathPrefix(`/static`))"
+      - "traefik.http.routers.django.entrypoints=websecure"
+      - "traefik.http.routers.django.tls=true"
+      - "traefik.http.routers.django.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.django.middlewares=security-headers@file,compression@file"
+      - "traefik.http.routers.django.tls.options=default"
+      - "traefik.http.services.django.loadbalancer.server.port=5000"
+
+  postgres:
+    build:
+      context: .
+      dockerfile: ./compose/production/postgres/Dockerfile
+    image: ${COMPOSE_PROJECT_NAME}_production_postgres
+    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - postgres_data_backups:/backups
+    env_file:
+      - ./.envs/.production/.postgres
+
+  redis:
+    image: redis:6
+    restart: unless-stopped
+
+  celeryworker:
+    <<: *django
+    image: ${COMPOSE_PROJECT_NAME}_production_celeryworker
+    command: /start-celeryworker
+    restart: unless-stopped
+
+  celerybeat:
+    <<: *django
+    image: ${COMPOSE_PROJECT_NAME}_production_celerybeat
+    command: /start-celerybeat
+    restart: unless-stopped
+
+  flower:
+    <<: *django
+    image: ${COMPOSE_PROJECT_NAME}_production_flower
+    command: /start-flower
+    restart: unless-stopped
+    expose:
+      - 5555
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.flower.rule=(Host(`${DOMAIN}`) || Host(`www.${DOMAIN}`))"
+      - "traefik.http.routers.flower.entrypoints=flower"
+      - "traefik.http.routers.flower.tls=true"
+      - "traefik.http.routers.flower.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.flower.middlewares=security-headers@file,compression@file"
+      - "traefik.http.routers.flower.tls.options=default"
+      - "traefik.http.services.flower.loadbalancer.server.port=5555"
+
+  nginx:
+    build:
+      context: .
+      dockerfile: ./compose/production/nginx/Dockerfile
+    image: ${COMPOSE_PROJECT_NAME}_nginx
+    restart: unless-stopped
+    depends_on:
+      - django
+    volumes:
+      - django_media:/usr/share/nginx/media:ro
+    expose:
+      - 80
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nginx.priority=90"
+      - "traefik.http.routers.nginx.rule=(Host(`${DOMAIN}`) || Host(`www.${DOMAIN}`)) && PathPrefix(`/media`)"
+      - "traefik.http.routers.nginx.entrypoints=websecure"
+      - "traefik.http.routers.nginx.tls=true"
+      - "traefik.http.routers.nginx.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.nginx.middlewares=security-headers@file,compression@file"
+      - "traefik.http.routers.nginx.tls.options=default"
+      - "traefik.http.services.nginx.loadbalancer.server.port=80"

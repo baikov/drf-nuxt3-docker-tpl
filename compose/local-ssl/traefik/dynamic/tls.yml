@@ -1,0 +1,9 @@
+# Add your local certificate here...
+# cd ./compose/local-ssl/traefik/certs
+# Suppose your domain is `tpl.local`
+# mkcert -cert-file tpl.local.pem -key-file tpl.local-key.pem tpl.local "*.tpl.local"
+# mkcert -install
+tls:
+  certificates:
+    - certFile: /etc/certs/tpl.local.pem
+      keyFile: /etc/certs/tpl.local-key.pem

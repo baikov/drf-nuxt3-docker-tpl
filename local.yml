@@ -1,0 +1,120 @@
+version: '3.9'
+name: ${COMPOSE_PROJECT_NAME}
+
+volumes:
+  node_modules: {}
+  postgres_data: {}
+
+services:
+  nuxt:
+    build:
+      context: .
+      dockerfile: ./compose/local/nuxt/Dockerfile
+    image: ${COMPOSE_PROJECT_NAME}_nuxt
+    container_name: ${COMPOSE_PROJECT_NAME}_nuxt
+    restart: unless-stopped
+    env_file:
+      - .env
+      - ./.envs/.local/.nuxt
+    ports:
+      - '${NUXT_DOCKER_PORT}:3000'
+      - '${HMR_DOCKER_PORT}:24678'
+    command: yarn dev  # sh -c "yarn && yarn dev"
+    volumes:
+      - ./frontend:/nuxt
+      - node_modules:/nuxt/node_modules
+
+  django: &django
+    build:
+      context: .
+      dockerfile: ./compose/local/django/Dockerfile
+    image: ${COMPOSE_PROJECT_NAME}_local_django
+    container_name: ${COMPOSE_PROJECT_NAME}_local_django
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+      - mailhog
+    volumes:
+      - ./backend:/app:z
+    env_file:
+      - .env
+      - ./.envs/.local/.django
+      - ./.envs/.local/.postgres
+    ports:
+      - '${DJANGO_DOCKER_PORT}:8000'
+    command: /start
+
+  postgres:
+    build:
+      context: .
+      dockerfile: ./compose/production/postgres/Dockerfile
+    image: ${COMPOSE_PROJECT_NAME}_postgres
+    container_name: ${COMPOSE_PROJECT_NAME}_postgres
+    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./pg-backups:/backups:z
+    env_file:
+      - .env
+      - ./.envs/.local/.postgres
+    ports:
+      - '${POSTGRES_DOCKER_PORT}:5432'
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.0
+    container_name: ${COMPOSE_PROJECT_NAME}_mailhog
+    restart: unless-stopped
+    ports:
+      - '${MAILHOG_DOCKER_PORT}:8025'
+
+  redis:
+    image: redis:6
+    container_name: ${COMPOSE_PROJECT_NAME}_redis
+
+  celeryworker:
+    <<: *django
+    image: ${COMPOSE_PROJECT_NAME}_celeryworker
+    container_name: ${COMPOSE_PROJECT_NAME}_celeryworker
+    depends_on:
+      - redis
+      - postgres
+      - mailhog
+    ports: []
+    command: /start-celeryworker
+
+  celerybeat:
+    <<: *django
+    image: ${COMPOSE_PROJECT_NAME}_celerybeat
+    container_name: ${COMPOSE_PROJECT_NAME}_celerybeat
+    depends_on:
+      - redis
+      - postgres
+      - mailhog
+    ports: []
+    command: /start-celerybeat
+
+  flower:
+    <<: *django
+    image: ${COMPOSE_PROJECT_NAME}_flower
+    container_name: ${COMPOSE_PROJECT_NAME}_flower
+    ports:
+      - '5555:5555'
+    command: /start-flower
+    restart: unless-stopped
+
+  # docs:
+  #   image: ${COMPOSE_PROJECT_NAME}_docs
+  #   container_name: ${COMPOSE_PROJECT_NAME}_docs
+  #   build:
+  #     context: .
+  #     dockerfile: ./compose/local/docs/Dockerfile
+  #   env_file:
+  #     - ./.envs/.local/.django
+  #   volumes:
+  #     - ./backend/docs:/docs:z
+  #     - ./backend/config:/app/config:z
+  #     - ./backend/backend:/app/backend:z
+  #   ports:
+  #     - '9000:9000'
+  #   command: /start-docs

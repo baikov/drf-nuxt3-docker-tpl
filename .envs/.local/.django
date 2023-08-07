@@ -1,0 +1,20 @@
+# General
+# ------------------------------------------------------------------------------
+USE_DOCKER=yes
+IPYTHONDIR=/app/.ipython
+
+# Django
+DJANGO_ADMIN_URL=${DJANGO_ADMIN_URL}  # set in .env
+DJANGO_ALLOWED_HOSTS=.${DOMAIN}
+DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost,${DOMAIN}
+
+# Redis
+# ------------------------------------------------------------------------------
+REDIS_URL=redis://redis:6379/0
+
+# Celery
+# ------------------------------------------------------------------------------
+
+# Flower
+CELERY_FLOWER_USER=flower
+CELERY_FLOWER_PASSWORD=flower

@@ -1,0 +1,69 @@
+version: '3.9'
+
+services:
+  traefik:
+    ports:
+      - '0.0.0.0:443:443'  # TLS
+    volumes:
+      - ./compose/local-ssl/traefik/traefik.yml:/etc/traefik/traefik.yml
+      - ./compose/local-ssl/traefik/dynamic:/etc/traefik/dynamic
+      - ./compose/local-ssl/traefik/certs:/etc/certs:ro
+    labels:
+      - "traefik.enable=true"
+      # Secure Dashboard (http basic auth)
+      - "traefik.http.routers.dashboard.rule=Host(`${TRAEFIK_DASHBOARD}.${DOMAIN}`) && (PathPrefix(`/api`) || PathPrefix(`/dashboard`))"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.tls=true"
+      # Dashboard auth ()
+      # - "traefik.http.middlewares.dashboard-auth.basicauth.users=${DASHBOARD_LOG_PSW}"
+
+  nuxt:
+    env_file:
+      - ./.envs/.production/.nuxt
+    labels:
+      # Nuxt
+      - "traefik.http.routers.nuxt.entrypoints=websecure"
+      - "traefik.http.routers.nuxt.tls=true"
+      - "traefik.http.routers.nuxt.middlewares=security-headers@file,compression@file"
+      # HMR
+      - "traefik.http.routers.hmr.tls=true"
+
+  django: &django
+    labels:
+      - "traefik.http.routers.django.entrypoints=websecure"
+      - "traefik.http.routers.django.tls=true"
+      - "traefik.http.routers.django.middlewares=security-headers@file,compression@file"
+
+  mailhog:
+    labels:
+      - "traefik.http.routers.mailhog.entrypoints=mailhog"
+      - "traefik.http.routers.mailhog.tls=true"
+      - "traefik.http.routers.mailhog.middlewares=security-headers@file,compression@file"
+
+  flower:
+    <<: *django
+    labels:
+      - "traefik.http.routers.flower.tls=true"
+      - "traefik.http.routers.flower.middlewares=security-headers@file,compression@file"
+
+  # docs:
+  #   labels:
+  #     - "traefik.http.routers.flower.tls=true"
+  #     - "traefik.http.routers.flower.middlewares=security-headers@file,compression@file"
+
+# For Traefik 3.0
+  # postgres:
+  #   ports: !reset []
+  #   expose:
+  #     - '5432'
+  #   labels:
+  #     - "traefik.enable=true"
+  #     # - "traefik.tcp.routers.postgres.rule=HostSNI(`*`)"
+  #     # - "traefik.tcp.routers.postgres.tls=false"
+  #     # - "traefik.tcp.routers.postgres.tls.options=default"
+  #     - "traefik.tcp.routers.postgres.rule=HostSNI(`${DOMAIN}`)"
+  #     - "traefik.tcp.routers.postgres.entrypoints=postgres"
+  #     - "traefik.tcp.routers.postgres.service=postgres@docker"
+  #     - "traefik.tcp.routers.postgres.tls=true"
+  #     - "traefik.tcp.services.postgres.loadBalancer.server.port=5432"

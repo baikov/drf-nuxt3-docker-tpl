@@ -1,0 +1,3 @@
+SITE_NAME="Nuxt3 Template"
+HMR_PROTOCOL=ws
+PROTOCOL=http
